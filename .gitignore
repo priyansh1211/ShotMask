@@ -217,10 +217,23 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-
+# Frames and videos — never push these
 examples/Frames/
 examples/*.mp4
 examples/*.mov
 examples/*.mkv
+
+# Model checkpoints — too large
+checkpoints/
 *.pt
 *.pth
+
+# Secrets — never ever
+PAT.txt
+*.txt containing tokens
+
+# Virtual environment
+.venv/
+
+# VSCode settings
+.vscode/
