@@ -216,3 +216,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+
+examples/Frames/
+examples/*.mp4
+examples/*.mov
+examples/*.mkv
+*.pt
+*.pth
