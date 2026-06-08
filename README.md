@@ -21,6 +21,7 @@ channel ready for Nuke or After Effects..
 
 ## First Result
 SAM 2 generating a mask at 99% confidence on a test image:
+![First mask result](examples/first_mask_result.png)
 
 ## Tech Stack
 - **SAM 2** (Meta) — video object segmentation
