@@ -22,7 +22,7 @@ class SAM2Predictor:
         Output: None (SAM 2 stores it internally for later use in prediction).
         """
         with torch.inference_mode():
-            self.predictor.model.set_image(frame) ## Set the image for the predictor to work with. This is necessary before making any predictions.\
+            self.predictor.set_image(frame) ## Set the image for the predictor to work with. This is necessary before making any predictions.\
         print("Frame set successfully.")
     
     def predict_mask(self,x,y):
