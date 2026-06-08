@@ -22,7 +22,7 @@ class SAM2Predictor:
         Output: None (SAM 2 stores it internally for later use in prediction).
         """
         with torch.inference_mode():
-            self.predictor.set_image(frame) ## Set the image for the predictor to work with. This is necessary before making any predictions.\
+            self.predictor.set_image(frame) ## Set the image for the predictor to work with. This is necessary before making any predictions.
         print("Frame set successfully.")
     
     def predict_mask(self,x,y):
@@ -32,8 +32,13 @@ class SAM2Predictor:
         Input: x: x-coordinate of the point, y: y-coordinate of the point. (Artist's click)
         Output: A binary mask of shape (H, W) where pixels belonging to the predicted object are 1 and others are 0.
         """
-        ##input_point = np.array([[x, y]]) ## Create an array for the input point
-        ##input_label = np.array([1]) ## Create an array for the input label (1 for foreground)
-        ##with torch.inference_mode():
-        ##    masks, _, _ = self.predictor.predict(point_coords=input_point, point_labels=input_label) ## Predict the mask using the predictor
-        ##return masks[0] ## Return the first mask (since we only have one point)
+        input_point = np.array([[x, y]]) ## Create an array for the input point
+        input_label = np.array([1]) ## Create an array for the input label (1 for foreground)
+        with torch.inference_mode():
+            masks, scores, _ = self.predictor.predict(
+                point_coords=input_point, 
+                point_labels=input_label,
+                multimask_output=True
+            ) ## Predict the mask using the predictor
+        best_mask = masks[np.argmax(scores)] ## Select the mask with the highest score
+        return best_mask, scores[np.argmax(scores)] ## Return the best mask and its score
