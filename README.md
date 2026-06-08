@@ -1,18 +1,52 @@
 # Shotmask
-Rotoscoping tool that automatically generates 
-masks for VFX artists using Meta's SAM 2.
+Rotoscoping tool that automates VFX masking workflows 
+using Meta's SAM 2. Reduces manual rotoscoping from hours to minutes..
 
 ## Status
-🚧 In active development — May 2026
+In active development — June 2026
+
+### Progress
+- [x] Frame extraction pipeline (OpenCV)
+- [x] SAM 2 model loading and inference
+- [x] Single-frame mask generation (99%+ confidence)
+- [ ] Alpha channel PNG export
+- [ ] Full video mask pipeline
+- [ ] Gradio UI
+- [ ] Hugging Face Spaces deployment
 
 ## What It Does
-Upload a video → click on subject → get clean masks 
-exported as PNG sequence ready for Nuke/After Effects.
+Upload a video → click on subject → SAM 2 automatically generates 
+a precise mask for every frame → export as PNG sequence with alpha 
+channel ready for Nuke or After Effects..
+
+## First Result
+SAM 2 generating a mask at 99% confidence on a test image:
 
 ## Tech Stack
-- SAM 2 (Meta) — video segmentation
-- PyTorch — model inference  
-- OpenCV — video processing
-- Gradio — user interface
+- **SAM 2** (Meta) — video object segmentation
+- **PyTorch** — model inference on GPU
+- **OpenCV** — video processing and frame extraction
+- **Pillow** — PNG with alpha channel export
+- **Gradio** — user interface (coming soon)
 
-## Project Structure (coming soon)
+## Project Structure
+````
+ShotMask/
+├── src/
+│   ├── preprocess.py        # Video → frames extraction
+│   ├── sam2_predictor.py    # SAM 2 model wrapper
+│   ├── alpha_exporter.py    # Mask → PNG with alpha (in progress)
+│   └── mask_generator.py    # Full video pipeline (coming soon)
+├── app.py                   # Gradio UI (coming soon)
+├── notebooks/
+│   └── 01_sam2_test.ipynb   # Development notebook
+└── examples/                # Test footage and results
+````
+
+## Running the Frame Extractor
+````bash
+python src/preprocess.py --video your_video.mp4 --output examples/Frames
+````
+
+## Target
+Fully working tool deployed on Hugging Face Spaces by July 2026.
