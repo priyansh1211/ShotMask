@@ -23,6 +23,9 @@ channel ready for Nuke or After Effects..
 SAM 2 generating a mask at 99% confidence on a test image:
 ![First mask result](examples/first_mask_result.png)
 
+Successfully exported the mask:
+![Test_output](examples/test_output.png)
+
 ## Tech Stack
 - **SAM 2** (Meta) — video object segmentation
 - **PyTorch** — model inference on GPU
