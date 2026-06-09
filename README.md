@@ -9,7 +9,7 @@ In active development — June 2026
 - [x] Frame extraction pipeline (OpenCV)
 - [x] SAM 2 model loading and inference
 - [x] Single-frame mask generation (99%+ confidence)
-- [ ] Alpha channel PNG export
+- [x] Alpha channel PNG export
 - [ ] Full video mask pipeline
 - [ ] Gradio UI
 - [ ] Hugging Face Spaces deployment
