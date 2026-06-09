@@ -36,7 +36,7 @@ ShotMask/
 ├── src/
 │   ├── preprocess.py        # Video → frames extraction
 │   ├── sam2_predictor.py    # SAM 2 model wrapper
-│   ├── alpha_exporter.py    # Mask → PNG with alpha (in progress)
+│   ├── alpha_exporter.py    # Mask → PNG with alpha 
 │   └── mask_generator.py    # Full video pipeline (coming soon)
 ├── app.py                   # Gradio UI (coming soon)
 ├── notebooks/
