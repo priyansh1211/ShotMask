@@ -34,24 +34,43 @@ def generate_masks(frames_folder,output_folder, checkpoint_path, model_cfg,x,y):
         print(f"Warning: Found {total} frames. Processing may take a long time.")
     print(f"Found {total} frames. Starting mask generation...")
 
+    # Validate coordinates are within frame dimensions
+    sample_frame = np.array(Image.open(
+        os.path.join(frames_folder, frames[0])
+    ))
+
+    h,w = sample_frame.shape[:2]
+    
+    if not (0 <= x < w and 0 <= y < h):
+        print(f"Error: Coordinates (x={x}, y={y}) are out of bounds for frame dimensions (width={w}, height={h}).")
+        return
+
     # Loop through every frame, load frame as numpy array, set frame in predcitor, predict mask using X,Y, Create RGBA Image, Save as PNG, print the progress
     for i,frame in enumerate(frames):
-        frame_path = os.path.join(frames_folder, frame)
-        output_path = os.path.join(output_folder, frame.replace('.jpg', '.png'))
+        try:
+            frame_path = os.path.join(frames_folder, frame)
+            output_path = os.path.join(output_folder, frame.replace('.jpg', '.png'))
+            
+            # Load frame as numpy array
+            frame_array = np.array(Image.open(frame_path).convert('RGB'))
+            
+            # Set frame in predictor
+            predictor.set_frame(frame_array)
+            
+            # Predict mask using X,Y
+            mask, score = predictor.predict_mask(x,y)
+            
+            if score < 0.3:
+                print(f"Warning:[{i+1}/{total}] Low mask confidence ({score:.4f}) for {frame}. Mask may be inaccurate.")
+            
+            # Create RGBA Image
+            rgba_image = create_rgba_image(frame_array, mask)
+            
+            # Save as PNG
+            save_png(rgba_image, output_path)
+            
+            print(f"[{i+1}/{total}] Processed {frame} - Mask Score: {score:.4f}")
 
-        # Load frame as numpy array
-        frame_array = np.array(Image.open(frame_path).convert('RGB'))
-
-        # Set frame in predictor
-        predictor.set_frame(frame_array)
-
-        # Predict mask using X,Y
-        mask, score = predictor.predict_mask(x,y)
-
-        # Create RGBA Image
-        rgba_image = create_rgba_image(frame_array, mask)
-
-        # Save as PNG
-        save_png(rgba_image, output_path)
-
-        print(f"[{i+1}/{total}] Processed {frame} - Mask Score: {score:.4f}")
+        except Exception as e:
+            print(f"Error processing frame {frame}: {e}")
+            continue
