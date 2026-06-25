@@ -2,7 +2,7 @@ import os
 import numpy as np
 import torch
 from sam2.build_sam import build_sam2_video_predictor
-
+import shutil
 class SAM2VideoPredictor:
 
     def __init__(self, checkpoint_path, model_cfg):
@@ -19,6 +19,29 @@ class SAM2VideoPredictor:
         self._click_added = False
         print("Video model loaded successfully.")
 
+    def _prepare_numeric_frames(self, frames_folder):
+        """
+        SAM2's Video predictor requires purely numeric frame filenames. 
+        This function renames frames in the folder to a numeric sequence if necessary.
+        IN: frames_folder - original folder (e.g. frames_0000.jpg style)
+        OUT: path to a folder with SAM2 compatible numeric filenames
+        """
+        frames = sorted([f for f in os.listdir(frames_folder) if f.lower().endswith(('.jpg', '.jpeg'))])
+        try:
+            int(os.path.splitext(frames[0])[0])
+            return frames_folder
+        except ValueError:
+            pass
+        numeric_folder = frames_folder.rstrip('/\\') + "_numeric"
+        
+        if os.path.exists(numeric_folder):
+            shutil.rmtree(numeric_folder)
+        os.makedirs(numeric_folder)
+        
+        for i,frame in enumerate(frames):
+            shutil.copy(os.path.join(frames_folder, frame), os.path.join(numeric_folder, f"{i}.jpg"))
+        return numeric_folder        
+   
     def init_video(self, video_path):
         """
         Initialize SAM 2 video tracking on a folder of frames.
@@ -27,13 +50,17 @@ class SAM2VideoPredictor:
         """
         if not os.path.isdir(video_path):
             raise FileNotFoundError(f"Video frames folder not found: {video_path}")
-
         frames = [f for f in os.listdir(video_path) if f.lower().endswith(('.jpg', '.jpeg'))]
+        
         if len(frames) == 0:
             raise ValueError(f"No JPEG frames found in {video_path}")
-
+        # Ensure frame filenames are SAM2-compatible (purely numeric)
+        video_path = self._prepare_numeric_frames(video_path)
+        
         inference_state = self.predictor.init_state(video_path=video_path)
+        
         self.predictor.reset_state(inference_state)
+        
         print(f"Video initialized successfully with {len(frames)} frames.")
         return inference_state
 
@@ -80,10 +107,15 @@ class SAM2VideoPredictor:
             raise RuntimeError("No click added. Call add_click() before track().")
 
         video_segments = {}
-        for out_frame_idx, out_obj_ids, out_mask_logits in self.predictor.propagate_in_video(inference_state):
-            video_segments[out_frame_idx] = {
+        try:
+            for out_frame_idx, out_obj_ids, out_mask_logits in self.predictor.propagate_in_video(inference_state):
+                video_segments[out_frame_idx] = {
                 obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
                 for i, obj_id in enumerate(out_obj_ids)
             }
+        except torch.cuda.OutOfMemoryError:
+            raise RuntimeError(
+            "GPU ran out of memory during tracking. Try a shorter video or lower resolution frames."
+        )
         print(f"Tracking completed. Generated masks for {len(video_segments)} frames.")
         return video_segments
