@@ -177,7 +177,7 @@ with gr.Blocks(title="ShotMask — AI Rotoscoping") as demo:
             track_btn = gr.Button("3. Track across clip", variant="primary")
 
         with gr.Column():
-            scrub_slider = gr.Slider(minimum=0, maximum=0, value=0, step=1,
+            scrub_slider = gr.Slider(minimum=0, maximum=1, value=0, step=1,
                                       label="Scrub tracked mask", visible=False)
             scrub_preview = gr.Image(label="Tracked mask preview (checkerboard = transparent)")
             export_btn = gr.Button("4. Export PNG sequence (.zip)", variant="primary")
