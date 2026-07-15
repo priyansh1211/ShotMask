@@ -143,9 +143,9 @@ def export_zip(video_segments):
 
 
 CUSTOM_CSS = """
-#header { text-align: center; padding: 8px 0 4px 0; }
-#header h1 { margin-bottom: 2px; }
-.step-card { border: 1px solid var(--border-color-primary); border-radius: 14px; padding: 14px; }
+.section-card { border: 1px solid var(--border-color-primary); border-radius: 14px; padding: 16px; }
+.section-title { margin-bottom: 4px !important; }
+.section-subtitle { color: var(--body-text-color-subdued); margin-bottom: 14px !important; font-size: 0.9em; }
 """
 
 with gr.Blocks(
@@ -153,13 +153,6 @@ with gr.Blocks(
     theme=gr.themes.Soft(primary_hue="indigo", secondary_hue="purple"),
     css=CUSTOM_CSS,
 ) as demo:
-    gr.Markdown(
-        "# 🎬 ShotMask\n"
-        "Click a few spots on the object — forehead, chest, legs — to cover the whole subject. "
-        "SAM 2's memory attention then tracks it across the whole clip.",
-        elem_id="header",
-    )
-
     click_points_state = gr.State([])
     first_frame_state = gr.State(None)
     inference_state_holder = gr.State(None)
@@ -167,18 +160,31 @@ with gr.Blocks(
     video_segments_state = gr.State({})
 
     with gr.Row():
-        with gr.Column(elem_classes="step-card"):
-            video_input = gr.Video(label="1. Upload shot")
+        with gr.Column(elem_classes="section-card"):
+            gr.Markdown("### Step 1 · Select your subject", elem_classes="section-title")
+            gr.Markdown(
+                "Upload your shot, then click a few spots on the subject "
+                "(e.g. forehead, chest, legs) so the AI knows what to cut out.",
+                elem_classes="section-subtitle",
+            )
+            video_input = gr.Video(label="Upload shot")
             extract_btn = gr.Button("Load frames", variant="primary")
-            frame_display = gr.Image(label="2. Click the object (frame 0) — click several spots")
+            frame_display = gr.Image(label="Click the subject on frame 0")
             reset_btn = gr.Button("Reset points")
-            track_btn = gr.Button("3. Track across clip", variant="primary")
 
-        with gr.Column(elem_classes="step-card"):
+        with gr.Column(elem_classes="section-card"):
+            gr.Markdown("### Step 2 · Track & export", elem_classes="section-title")
+            gr.Markdown(
+                "The AI follows your subject across every frame. Scrub through "
+                "to check the result, then export a PNG sequence with alpha "
+                "channel — ready to drop into Nuke or After Effects.",
+                elem_classes="section-subtitle",
+            )
+            track_btn = gr.Button("Track across clip", variant="primary")
             scrub_slider = gr.Slider(minimum=0, maximum=1, value=0, step=1,
                                       label="Scrub tracked mask", visible=False)
             scrub_preview = gr.Image(label="Tracked mask preview (checkerboard = transparent)")
-            export_btn = gr.Button("4. Export PNG sequence (.zip)", variant="primary")
+            export_btn = gr.Button("Export PNG sequence (.zip)", variant="primary")
             export_file = gr.File(label="Download")
 
     extract_btn.click(
