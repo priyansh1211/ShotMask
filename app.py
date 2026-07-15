@@ -8,22 +8,25 @@ the RGBA PNG sequence for Nuke / After Effects.
 """
 
 import os
-import shutil
+import gc
+import io
+import zipfile
 import numpy as np
 import gradio as gr
 from PIL import Image
 
 from src.preprocess import extract_frames
 from src.video_predictor import SAM2VideoPredictor
-from src.alpha_exporter import create_rgba_image, save_png
+from src.alpha_exporter import create_rgba_image
+from download_checkpoint import ensure_checkpoint
 
-CHECKPOINT_PATH = "checkpoints/sam2.1_hiera_tiny.pt"
 MODEL_CFG = "configs/sam2.1/sam2.1_hiera_t.yaml"
 FRAMES_DIR = "examples/Frames"
-MASKS_DIR = "examples/Masks"
 OBJ_ID = 1
 
-# Load the model once at startup so clicking "Track" doesn't reload it every time
+# Load the model once at startup so clicking "Track" doesn't reload it every time.
+# ensure_checkpoint() downloads the .pt file on first run (checkpoints/ is gitignored).
+CHECKPOINT_PATH = ensure_checkpoint()
 predictor = SAM2VideoPredictor(CHECKPOINT_PATH, MODEL_CFG)
 
 
@@ -45,12 +48,15 @@ def list_frames():
     return sorted(f for f in os.listdir(FRAMES_DIR) if f.lower().endswith((".jpg", ".jpeg")))
 
 
-def on_extract(video_path, progress=gr.Progress()):
+def on_extract(video_path, test_mode, progress=gr.Progress()):
     if video_path is None:
         raise gr.Error("Upload a video first.")
 
     progress(0, desc="Extracting frames...")
-    extract_frames(video_path, FRAMES_DIR)
+    # test_mode downsamples to 5fps for fast dev iteration only — leave
+    # unchecked for anything you intend to actually export, since
+    # rotoscoping needs a mask per original frame to line up in Nuke/AE.
+    extract_frames(video_path, FRAMES_DIR, target_fps=5 if test_mode else None)
     frames = list_frames()
     if not frames:
         raise gr.Error("No frames were extracted from that video.")
@@ -124,22 +130,41 @@ def show_frame_preview(frame_idx, video_segments):
     return composite_on_checker(frame, mask)
 
 
-def export_zip(video_segments):
+def export_zip(video_segments, progress=gr.Progress()):
     if not video_segments:
         raise gr.Error("Track the object first — nothing to export yet.")
-    if os.path.isdir(MASKS_DIR):
-        shutil.rmtree(MASKS_DIR)
-    os.makedirs(MASKS_DIR, exist_ok=True)
 
     frames = list_frames()
-    for frame_idx, obj_masks in video_segments.items():
-        mask = obj_masks[OBJ_ID].squeeze()
-        frame_path = os.path.join(FRAMES_DIR, frames[frame_idx])
-        frame_array = np.array(Image.open(frame_path).convert("RGB"))
-        rgba_image = create_rgba_image(frame_array, mask)
-        save_png(rgba_image, os.path.join(MASKS_DIR, f"mask_{frame_idx:04d}.png"))
+    zip_path = "shotmask_export.zip"
+    frame_indices = sorted(video_segments.keys())
+    total = len(frame_indices)
 
-    return shutil.make_archive("shotmask_export", "zip", MASKS_DIR)
+    # Stream straight into the zip instead of writing 500+ PNGs to disk and
+    # then re-reading them all via shutil.make_archive — that second pass
+    # was a memory/CPU spike layered on top of everything already resident
+    # from tracking, and on free-tier Colab RAM that's what was crashing
+    # the session right at the end of long clips.
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for i, frame_idx in enumerate(frame_indices):
+            obj_masks = video_segments[frame_idx]
+            mask = obj_masks[OBJ_ID].squeeze()
+            frame_path = os.path.join(FRAMES_DIR, frames[frame_idx])
+            frame_array = np.array(Image.open(frame_path).convert("RGB"))
+            rgba_image = create_rgba_image(frame_array, mask)
+
+            buf = io.BytesIO()
+            Image.fromarray(rgba_image.astype("uint8"), "RGBA").save(buf, format="PNG")
+            zf.writestr(f"mask_{frame_idx:04d}.png", buf.getvalue())
+
+            # Explicitly drop references each iteration — with 500+ frames,
+            # letting these accumulate before garbage collection catches up
+            # is exactly what pushes free-tier Colab RAM over the edge.
+            del frame_array, rgba_image, buf
+            if i % 50 == 0:
+                gc.collect()
+                progress((i + 1) / total, desc=f"Exporting frame {i + 1}/{total}")
+
+    return zip_path
 
 
 CUSTOM_CSS = """
@@ -168,6 +193,10 @@ with gr.Blocks(
                 elem_classes="section-subtitle",
             )
             video_input = gr.Video(label="Upload shot")
+            test_mode_toggle = gr.Checkbox(
+                label="Dev/test mode (downsample to 5fps for faster iteration — don't use this for a real export)",
+                value=False,
+            )
             extract_btn = gr.Button("Load frames", variant="primary")
             frame_display = gr.Image(label="Click the subject on frame 0")
             reset_btn = gr.Button("Reset points")
@@ -188,7 +217,7 @@ with gr.Blocks(
             export_file = gr.File(label="Download")
 
     extract_btn.click(
-        on_extract, inputs=[video_input],
+        on_extract, inputs=[video_input, test_mode_toggle],
         outputs=[frame_display, click_points_state, first_frame_state,
                  inference_state_holder, frame_size_state],
     )
