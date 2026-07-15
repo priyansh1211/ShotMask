@@ -1,7 +1,21 @@
-opencv-python
-numpy
-torch
-torchvision
-pillow
-sam2
-gradio
+# Core ML
+torch==2.5.1
+torchvision==0.20.1
+
+# SAM 2.1 — pinned to a known-good release (matches sam2.1_hiera_t.yaml config layout).
+# If this ever breaks on HF Spaces, fall back to installing from source instead:
+#   git+https://github.com/facebookresearch/sam2.git@main
+sam2==1.1.0
+
+# Video / image processing — headless build only (no GUI libs, required for
+# Colab / HF Spaces which have no display server; the regular opencv-python
+# package will fail to import there with a libGL error).
+opencv-python-headless==4.10.0.84
+pillow==11.0.0
+numpy==1.26.4
+
+# UI
+gradio==5.9.1
+
+# Checkpoint download at runtime (see download_checkpoint.py)
+huggingface_hub==0.26.2
