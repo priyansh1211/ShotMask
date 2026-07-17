@@ -157,12 +157,20 @@ def export_zip(video_segments, progress=gr.Progress()):
     frame_indices = sorted(video_segments.keys())
     total = len(frame_indices)
 
-    # Stream straight into the zip instead of writing 500+ PNGs to disk and
-    # then re-reading them all via shutil.make_archive — that second pass
-    # was a memory/CPU spike layered on top of everything already resident
-    # from tracking, and on free-tier Colab RAM that's what was crashing
-    # the session right at the end of long clips.
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+    # ZIP_STORED (no compression), not ZIP_DEFLATED — PNG bytes are already
+    # compressed, so DEFLATE was burning CPU trying to shrink data that
+    # barely shrinks further. At 4K x 500 frames this was a meaningful
+    # chunk of the export time for near-zero size benefit.
+    #
+    # compress_level=3 on the PNG itself (Pillow default is 6) trades a
+    # little file size for meaningfully faster encoding — worth it for an
+    # intermediate export artifact, not a final deliverable.
+    #
+    # print() every frame, not just every 50 via gr.Progress — if the
+    # installed Gradio version doesn't match what progress() expects, the
+    # UI bar can silently stop rendering while work continues in the
+    # background. The console log should never go quiet during a long export.
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as zf:
         for i, frame_idx in enumerate(frame_indices):
             obj_masks = video_segments[frame_idx]
             mask = obj_masks[OBJ_ID].squeeze()
@@ -171,17 +179,18 @@ def export_zip(video_segments, progress=gr.Progress()):
             rgba_image = create_rgba_image(frame_array, mask)
 
             buf = io.BytesIO()
-            Image.fromarray(rgba_image.astype("uint8"), "RGBA").save(buf, format="PNG")
+            Image.fromarray(rgba_image.astype("uint8")).save(
+                buf, format="PNG", compress_level=3
+            )
             zf.writestr(f"mask_{frame_idx:04d}.png", buf.getvalue())
 
-            # Explicitly drop references each iteration — with 500+ frames,
-            # letting these accumulate before garbage collection catches up
-            # is exactly what pushes free-tier Colab RAM over the edge.
             del frame_array, rgba_image, buf
+            print(f"Exported frame {i + 1}/{total}")
             if i % 50 == 0:
                 gc.collect()
                 progress((i + 1) / total, desc=f"Exporting frame {i + 1}/{total}")
 
+    print(f"Export complete: {total} frames written to {zip_path}")
     return zip_path
 
 
