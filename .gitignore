@@ -223,6 +223,12 @@ examples/*.mp4
 examples/*.mov
 examples/*.mkv
 
+# Export outputs — regeneratable, and PNG sequence zips are frequently
+# multi-GB at 4K (GitHub hard-rejects files over 100MB anyway)
+examples/Masks/
+*.zip
+shotmask_export.zip
+
 # Model checkpoints — too large
 checkpoints/
 *.pt
