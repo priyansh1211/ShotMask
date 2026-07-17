@@ -64,13 +64,20 @@ class SAM2VideoPredictor:
         print(f"Video initialized successfully with {len(frames)} frames.")
         return inference_state
 
-    def add_click(self, inference_state, obj_id, x, y, frame_width=None, frame_height=None):
+    def add_click(self, inference_state, obj_id, x, y, frame_width=None, frame_height=None,
+                  clear_old_points=True):
         """
         Add a click point on frame 0 to select the subject to track.
         IN: inference_state — from init_video
             obj_id — positive integer ID for this subject
             x, y — artist's click coordinates
             frame_width, frame_height — optional, for bounds checking
+            clear_old_points — SAM2's add_new_points_or_box defaults to
+                wiping all previously registered points for this obj_id
+                every time it's called. Pass False when accumulating
+                multiple clicks on the same subject (True only for the
+                first click in a batch, or to intentionally restart
+                selection for this object).
         OUT: None (the click is registered internally for tracking)
         """
         obj_id, x, y = int(obj_id), int(x), int(y)
@@ -92,7 +99,8 @@ class SAM2VideoPredictor:
             frame_idx=0,
             obj_id=obj_id,
             points=points,
-            labels=labels
+            labels=labels,
+            clear_old_points=clear_old_points,
         )
         self._click_added = True
         print(f"Click added successfully for object ID {obj_id} at coordinates ({x}, {y}).")

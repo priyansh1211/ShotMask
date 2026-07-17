@@ -65,6 +65,19 @@ def on_extract(video_path, test_mode, progress=gr.Progress()):
     frame_w, frame_h = first_frame_img.size
     first_frame = np.array(first_frame_img)
 
+    # SAM2's video predictor holds encoded features for every frame at once —
+    # at 4K that's ~4x the memory of 1080p, and free-tier Colab (T4 + limited
+    # system RAM) genuinely can't hold that for a 500+ frame clip. This isn't
+    # fixable in code; it's a hardware ceiling. Warn now, not 3 minutes into
+    # a track() call.
+    if max(frame_w, frame_h) > 1920:
+        gr.Warning(
+            f"This clip is {frame_w}x{frame_h} — above 1080p. On free-tier "
+            "Colab (T4), tracking a clip this large is likely to exhaust "
+            "RAM partway through. Consider testing with a 1080p-or-smaller "
+            "clip, or downscale this one before uploading."
+        )
+
     # Show the frame immediately — don't make the artist stare at a blank box
     # while SAM2 encodes every frame in the background.
     yield first_frame, [], first_frame, None, (frame_w, frame_h)
@@ -98,9 +111,14 @@ def on_track(points, inference_state, frame_size, progress=gr.Progress()):
 
     frame_w, frame_h = frame_size
     progress(0, desc=f"Registering {len(points)} click(s)...")
-    for x, y in points:
+    # clear_old_points=True on the first click only — SAM2 wipes all prior
+    # points for this object every call unless told not to, so calling this
+    # with the default for every point would silently discard everything
+    # except whichever click happens to run last.
+    for i, (x, y) in enumerate(points):
         predictor.add_click(inference_state, obj_id=OBJ_ID, x=x, y=y,
-                             frame_width=frame_w, frame_height=frame_h)
+                             frame_width=frame_w, frame_height=frame_h,
+                             clear_old_points=(i == 0))
 
     progress(0.3, desc="Tracking object across the clip (SAM2 memory attention)...")
     video_segments = predictor.track(inference_state)
