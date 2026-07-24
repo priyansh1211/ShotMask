@@ -4,10 +4,14 @@ ShotMask handles the core rotoscoping pipeline end-to-end. The following
 edge cases are identified but not yet handled, in rough priority order.
 
 ## Tracking Robustness
-- **Subject occlusion/exit**: If the tracked subject leaves the frame
-  entirely or is fully occluded for multiple frames, SAM 2's behavior on
-  re-entry has not been tested. May require re-clicking to re-establish
-  tracking.
+- **Subject occlusion/exit — tested, passes**: A full-body occlusion
+  (car passing in front of the subject) lasting ~70 frames (frames
+  ~430–500 of 541, 30fps, ~2.3s) was tested on real footage. Mask
+  disappeared cleanly during the occlusion (did not stick to the
+  occluding object) and reattached to the subject on reappearance with
+  no re-click needed. Untested beyond this: occlusions longer than ~70
+  frames, and the subject fully exiting frame bounds (rather than being
+  blocked by an object) before returning.
 - **Multiple subjects**: Currently supports tracking one subject (`obj_id`)
   per run. Multi-subject tracking would require calling `add_click` with
   multiple `obj_id`s before `track()` — the underlying SAM 2 API supports
