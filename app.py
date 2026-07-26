@@ -10,6 +10,7 @@ the RGBA PNG sequence for Nuke / After Effects.
 import os
 import gc
 import io
+import shutil
 import zipfile
 import numpy as np
 import gradio as gr
@@ -53,9 +54,23 @@ def on_extract(video_path, test_mode, progress=gr.Progress()):
         raise gr.Error("Upload a video first.")
 
     progress(0, desc="Extracting frames...")
+    # Wipe any frames left behind by a prior video/session before writing
+    # this one. Without this, extract_frames() only overwrites filenames
+    # up to its own frame count — leftover frames from a longer or
+    # differently-sized previous clip stay in the folder and get pulled
+    # into init_video()'s frame listing, silently corrupting this run
+    # (mismatched resolutions across "one video's" frames).
+    
+    if os.path.exists(FRAMES_DIR):
+        shutil.rmtree(FRAMES_DIR)
+    numeric_dir = FRAMES_DIR.rstrip("/\\") + "_numeric"
+    if os.path.exists(numeric_dir):
+        shutil.rmtree(numeric_dir)
+
     # test_mode downsamples to 5fps for fast dev iteration only — leave
     # unchecked for anything you intend to actually export, since
     # rotoscoping needs a mask per original frame to line up in Nuke/AE.
+
     extract_frames(video_path, FRAMES_DIR, target_fps=5 if test_mode else None)
     frames = list_frames()
     if not frames:
