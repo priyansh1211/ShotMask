@@ -77,6 +77,71 @@ one blob.
 **Status**: Logged as a passing "adjacent subjects, single blob" result;
 not a substitute for a real multi-subject test.
 
+### VFX-6 — Two distant, dissimilar objects, single click set ("candlelit dinner")
+**Input**: `10811234-hd_1080_1918_30fps.mp4` — candlelit dinner table,
+1080×1918 (portrait), 30fps. Flowers in a vase and a lit candle, roughly
+2ft apart in frame, both static.
+**Steps**: Clicked points on both the flowers and the candle as one set
+(single `obj_id`), then ran a full "Track across clip" (not just a
+frame-0 preview).
+**Expected**: Either a clean merged mask (as in VFX-2) or a clear,
+obvious failure to select one/both objects.
+**Actual**: FAILED — neither object got a clean mask. Flower petals came
+out with ragged, fragmented edges (disconnected orange fragments outside
+the main petal boundary). The candle showed a black drippy/streaky
+artifact running down its lower half, as if the alpha boundary was
+bleeding or breaking down partway along the object.
+**Analysis**: This is a different, and arguably more concerning, failure
+mode than VFX-2. VFX-2's two-adjacent-subjects case produced one clean
+(if merged) result. This case produced **poor quality on both regions
+independently** — not a clean merge, not a clean failure, but degraded
+boundaries throughout. Two confounded variables here that need
+untangling: (1) the objects are far apart and dissimilar (unlike VFX-2's
+adjacent, similar-context subjects), and (2) both objects individually
+have fine/organic/reflective detail (curled petals, specular candle wax)
+that may be a segmentation weak point on its own, independent of the
+multi-object clicking.
+**Status**: Logged as a real quality bug, not yet root-caused. Documented
+in `KNOWN_LIMITATIONS.md`. Needs a targeted follow-up test with each
+object tracked *individually* (its own single-object run) to isolate
+whether this is a multi-object-clicking problem, a fine-detail
+segmentation limitation, or both.
+
+**Follow-up — candle isolated, retested alone**: Same clip
+(`10811234-hd_1080_1918_30fps.mp4`, 221 frames), candle only, single
+`obj_id`, full track across clip. Result: PASSED — clean boundary
+throughout the scrub range (0–221), no drippy/streaky artifact. This
+strongly points the root cause of VFX-6 toward the **multi-object
+clicking itself** (points spanning two dissimilar, disconnected regions
+confusing the single mask) rather than a fine-detail segmentation limit
+on the candle's specular wax highlights. Still open: retest the flowers
+alone to confirm they're similarly clean in isolation — if so, VFX-6
+is fully explained by the multi-object confound, not a segmentation
+quality limit on either object individually.
+
+**Follow-up — vase + flowers isolated, retested alone**: Same clip,
+clicks on the vase body/stem (not the petals directly), single `obj_id`,
+full track across clip. Result: PASSED — both flower heads (SAM 2 pulled
+in the second head automatically via stem proximity, same grouping
+behavior as VFX-2) and the vase came out with clean, well-defined
+boundaries — no ragged/fragmented petal edges like the original VFX-6
+failure. **Minor new observation**: a small cluster of dark speckle
+artifacts appears right where the stems enter the vase neck — same
+character (though far smaller in extent) as the candle's original
+drippy artifact. Both occur at a thin dark structure near a bright
+highlight/background area, which may be a recurring weak point worth
+watching for in future tests, though not severe enough here to fail the
+test.
+
+**Conclusion**: VFX-6 is now fully explained. Both objects are clean
+when tracked individually; the original ragged/drippy failure only
+appeared when clicks spanned both dissimilar, disconnected objects under
+one `obj_id`. This is a genuine multi-object-clicking limitation, not a
+fine-detail segmentation weakness. Correctly scoped as "don't combine
+distant, dissimilar objects in one click set" rather than "SAM 2 can't
+handle organic/reflective detail" — the latter would have been a much
+bigger concern for VFX use cases and isn't supported by this data.
+
 ### VFX-3 — Long-take propagation (600+ frames)
 **Result**: PASSED, with a performance caveat (pre-dates this
 conversation). Runs correctly but slow — ~2+ it/s, ~5+ minutes total on
@@ -192,6 +257,9 @@ to `main`.
       `SPACE_ID` gating) works outside of Colab — never tested live
 - [ ] Run a real multi-subject test (VFX-2) — two people who separate or
       cross paths, checked frame-by-frame for whether the mask splits
+- [x] Isolate the VFX-6 boundary-quality bug — RESOLVED: both objects
+      confirmed clean when tracked individually; root cause was the
+      multi-object clicking, not a fine-detail segmentation limit
 - [ ] Fresh-clone + fresh `pip install` in a clean environment (no cached
       Colab packages) to confirm no hidden dependencies
 - [ ] Decide what test footage, if any, ships in `examples/` going

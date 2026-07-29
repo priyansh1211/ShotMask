@@ -15,7 +15,36 @@ edge cases are identified but not yet handled, in rough priority order.
 - **Multiple subjects**: Currently supports tracking one subject (`obj_id`)
   per run. Multi-subject tracking would require calling `add_click` with
   multiple `obj_id`s before `track()` — the underlying SAM 2 API supports
-  this, it's just not exposed in the UI yet.
+  this, it's just not exposed in the UI yet. Two tested outcomes when
+  combining clicks on multiple targets under one `obj_id`:
+  - Two adjacent/overlapping subjects (people standing close together):
+    produced one clean merged mask covering both.
+  - Two distant, dissimilar objects in frame (flowers + a candle, ~2ft
+    apart, tracked across a full clip): produced **poor boundary quality
+    on both** — ragged/fragmented edges on the flower petals and a
+    drippy black artifact down the candle — rather than a clean merge or
+    a clean failure. This isn't just an "unsupported use case," it's a
+    real quality regression when one click set spans dissimilar,
+    non-adjacent objects. Root cause not yet isolated — could be the
+    click points themselves being too sparse per-object, or the
+    single-mask representation genuinely struggling to hold two
+    disconnected regions with different textures/lighting through
+    tracking. Needs its own targeted test with the same object pairing
+    tracked separately (one `obj_id` per object) once multi-subject
+    support is exposed in the UI, to isolate whether this is a
+    single-object-representation limit or a click-density problem.
+- **Fine boundary precision on thin/organic/reflective shapes**: Curled
+  flower petals and a thin candle with specular wax highlights both
+  showed edge artifacts when clicked together as one combined object
+  (fragmented petal boundaries, streaky candle edge). Retested both
+  individually (separate single-`obj_id` runs) and both came out clean —
+  this confirms the artifacts were caused by the multi-object clicking
+  itself, not a standalone fine-detail segmentation limitation. One minor
+  residual pattern to watch: a small cluster of dark speckle artifacts
+  appeared where thin dark structures (flower stems) meet a bright
+  highlight/background, echoing the original candle artifact at much
+  smaller scale — not severe enough to fail a test so far, but worth
+  keeping an eye on in future fine-detail cases.
 
 ## Input Constraints
 - **Single-frame videos**: Behavior with a 1-frame "video" is untested.
