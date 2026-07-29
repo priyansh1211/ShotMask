@@ -64,6 +64,10 @@ class SAM2VideoPredictor:
         print(f"Video initialized successfully with {len(frames)} frames.")
         return inference_state
 
+    def reset(self, inference_state):
+        self.predictor.reset_state(inference_state)
+        self._click_added = False
+    
     def add_click(self, inference_state, obj_id, x, y, frame_width=None, frame_height=None,
                   clear_old_points=True):
         """

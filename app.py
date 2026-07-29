@@ -114,7 +114,9 @@ def on_click(first_frame, points, evt: gr.SelectData):
     return vis, points
 
 
-def on_reset(first_frame):
+def on_reset(first_frame, inference_state):
+    if inference_state is not None:
+        predictor.reset(inference_state)
     return first_frame, []
 
 
@@ -268,7 +270,7 @@ with gr.Blocks(
         outputs=[frame_display, click_points_state],
     )
     reset_btn.click(
-        on_reset, inputs=[first_frame_state],
+        on_reset, inputs=[first_frame_state, inference_state_holder],
         outputs=[frame_display, click_points_state],
     )
     track_btn.click(
