@@ -241,12 +241,47 @@ to `main`.
 
 ---
 
+### BUG-3 — "Reset points" doesn't clear tracking memory, old subject persists
+**Symptom**: Using `concert.mp4` (1920×1080-ish concert footage, 490
+frames), first click+track selected the singer — correct, mask included
+the mic stand too (expected, touching object). Clicked "Reset points",
+then clicked a different person (guitarist, right side of stage), then
+"Track across clip" again. Result: the tracked mask was still the
+**original singer**, not the newly-clicked guitarist.
+**Root cause**: `on_reset()` in `app.py` only cleared the UI-level click
+dots (`click_points_state`). It never touched the actual SAM 2
+`inference_state`. SAM 2's video predictor builds a memory bank of the
+clicked subject's appearance across every already-tracked frame during
+`propagate_in_video()`. `predictor.reset_state(inference_state)` — which
+clears that memory bank — was only ever called once, inside
+`init_video()`, at initial frame load. Adding new click points for a new
+subject (`clear_old_points=True`) only wipes the frame-0 *point prompts*,
+not the accumulated per-frame memory tied to `obj_id=1` from the prior
+full propagation. That stale memory outweighed the new click and the old
+subject kept winning.
+**Fix**: Added `SAM2VideoPredictor.reset()` (wraps
+`predictor.reset_state()` + clears the internal `_click_added` flag) and
+wired `on_reset()` in `app.py` to call it, passing `inference_state` as a
+new input to the reset button. See `src/video_predictor.py` and
+`app.py`.
+**Status**: Fix written in sandbox, **not yet applied to the live GitHub
+`app.py`** — same situation as BUG-1 was. Needs to be manually copied
+into the local repo, committed, and pushed. Retest required after: reset
+points, click a different subject, confirm the new subject (not the old
+one) is what gets tracked.
+
+---
+
 ## Open items (blocking a "ready for public/HF launch" status)
 
-- [ ] **Apply BUG-1 fix to the live `app.py` on GitHub** — currently
-      only exists in a sandbox clone, not committed or pushed
-- [ ] Retest HP-1 (athlete clip) after the fix lands, confirm frame count
-      matches extraction count exactly
+- [x] Apply BUG-1 fix to the live `app.py` on GitHub — CONFIRMED via
+      fresh clone: `shutil` import and `shutil.rmtree()` calls present
+- [ ] Retest HP-1 (athlete clip) end-to-end with the live fix to confirm
+      it works in practice, not just that the code is present
+- [ ] **Apply BUG-3 fix to the live `app.py` on GitHub** — `reset()`
+      method + reset button wiring, currently only in sandbox
+- [ ] Retest BUG-3 after the fix lands: reset points, click a different
+      subject, confirm the new subject (not the old one) tracks correctly
 - [ ] Run a dedicated stale-frame **regression** test: load Video A, then
       Video B (different frame count/resolution) in the same session
       without restarting, confirm B's frame count is never contaminated
