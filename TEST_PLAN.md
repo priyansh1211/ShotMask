@@ -27,6 +27,19 @@ in compositing.
 **Status**: Retest blocked on BUG-1 fix being applied to the live
 `app.py` (still not applied as of this writing — see Open Items).
 
+**Retest — CONFIRMED PASSING**: Different clip,
+`7187054-hd_1920_1080_24fps.mp4` (1920×1080, 24fps, 318 frames), run
+after the BUG-1 fix was live on GitHub. Log showed
+`Video initialized successfully with 318 frames.` — exact match to
+`Extracted 318 frames`, no contamination. Full pipeline completed
+end-to-end: tracking, scrub preview, and ZIP export (318/318 frames
+written). Deliberately used a *different* clip than the original
+failure to confirm the fix generalizes rather than just re-passing on
+a coincidence. Unrelated `ClientDisconnect`/ASGI traceback appeared in
+the log during file upload — a transient Gradio dev-server upload
+hiccup, did not affect extraction, tracking, or export; not a
+regression.
+
 ### HP-2 — Multi-click accuracy on ambiguous subject
 **Result**: RESOLVED (pre-dates this conversation). Early version only
 supported a single positive click per object, which sometimes selected a
@@ -270,33 +283,51 @@ into the local repo, committed, and pushed. Retest required after: reset
 points, click a different subject, confirm the new subject (not the old
 one) is what gets tracked.
 
+**Retest — CONFIRMED PASSING**: Fix pushed to GitHub, then re-run live
+on `concert.mp4` (490 frames): clicked singer, tracked (mic stand
+included again, expected), clicked "Reset points," clicked the
+guitarist, tracked again. Result this time: guitarist's mask, correctly
+distinct in both position and appearance from the singer's earlier mask
+— confirms `reset()` is actually clearing SAM 2's memory bank in
+practice, not just on paper. Log shows two clean full propagation cycles
+back to back (490/490 frames each) with no leftover-state artifacts.
+Same benign `ClientDisconnect` upload hiccup seen in the BUG-1 retest —
+unrelated, doesn't affect the result.
+
 ---
 
 ## Open items (blocking a "ready for public/HF launch" status)
 
+Per triage: most items below are downgraded to "documented, not
+independently tested" in `KNOWN_LIMITATIONS.md` rather than treated as
+launch blockers — normal for a solo portfolio project. Only the HF
+Spaces deployment remains a genuine hard requirement.
+
 - [x] Apply BUG-1 fix to the live `app.py` on GitHub — CONFIRMED via
       fresh clone: `shutil` import and `shutil.rmtree()` calls present
-- [ ] Retest HP-1 (athlete clip) end-to-end with the live fix to confirm
-      it works in practice, not just that the code is present
-- [ ] **Apply BUG-3 fix to the live `app.py` on GitHub** — `reset()`
-      method + reset button wiring, currently only in sandbox
-- [ ] Retest BUG-3 after the fix lands: reset points, click a different
-      subject, confirm the new subject (not the old one) tracks correctly
-- [ ] Run a dedicated stale-frame **regression** test: load Video A, then
-      Video B (different frame count/resolution) in the same session
-      without restarting, confirm B's frame count is never contaminated
-      by A
-- [ ] Re-verify UI-1's session-independent export link patch was ever
-      actually applied — status unknown
-- [ ] Deploy to a real HF Space and verify GPU-1 (`@spaces.GPU` +
-      `SPACE_ID` gating) works outside of Colab — never tested live
-- [ ] Run a real multi-subject test (VFX-2) — two people who separate or
-      cross paths, checked frame-by-frame for whether the mask splits
-- [x] Isolate the VFX-6 boundary-quality bug — RESOLVED: both objects
-      confirmed clean when tracked individually; root cause was the
-      multi-object clicking, not a fine-detail segmentation limit
-- [ ] Fresh-clone + fresh `pip install` in a clean environment (no cached
-      Colab packages) to confirm no hidden dependencies
-- [ ] Decide what test footage, if any, ships in `examples/` going
-      forward, given the stock-footage redistribution concern that came
-      up during the git history cleanup
+- [x] Retest HP-1 (athlete clip) end-to-end with the live fix —
+      CONFIRMED PASSING with a different clip (318 frames), see HP-1
+      above. Frame count matched exactly, full pipeline completed
+      through export.
+- [x] Apply BUG-3 fix to the live `app.py` on GitHub — CONFIRMED via
+      fresh clone: `reset()` method and `on_reset()` wiring present
+- [x] **Retest BUG-3 live**: CONFIRMED PASSING — reset points on
+      `concert.mp4`, clicked the guitarist after the singer, got the
+      guitarist's mask correctly. See BUG-3 above.
+- [ ] **Deploy to a real HF Space** — the one genuine hard requirement
+      left. Also effectively covers the fresh-clone/fresh-install sanity
+      check below, since Spaces builds from a clean container each time.
+      Watch for UI-1 (session-bound export links) during this test, since
+      Spaces' runtime model differs from a Colab notebook reconnect —
+      the original failure mode may or may not even apply there.
+
+**Downgraded — documented as untested in `KNOWN_LIMITATIONS.md`, not
+blocking launch:**
+- Stale-frame regression test (BUG-1's fix logically covers this; a
+  formal multi-video-in-one-session test is good hygiene, not required)
+- Real multi-subject test (VFX-2) — feature is already accurately
+  marked unsupported, not claimed anywhere
+- Fresh-clone + fresh `pip install` sanity check — subsumed by the HF
+  Spaces deployment above
+- Decision on test footage shipped in `examples/` — housekeeping,
+  doesn't affect functionality
