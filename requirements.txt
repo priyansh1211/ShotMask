@@ -17,5 +17,9 @@ numpy==1.26.4
 # UI
 gradio==5.9.1
 
+# ZeroGPU support — only used when running on an actual HF Space
+# (SPACE_ID env var), see the gpu_task gating in app.py.
+spaces
+
 # Checkpoint download at runtime (see download_checkpoint.py)
 huggingface_hub==0.26.2

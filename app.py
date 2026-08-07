@@ -21,6 +21,28 @@ from src.video_predictor import SAM2VideoPredictor
 from src.alpha_exporter import create_rgba_image
 from download_checkpoint import ensure_checkpoint
 
+# ZeroGPU Spaces only grant GPU access inside functions wrapped in
+# @spaces.GPU — without this, SAM2's CUDA calls either fail or silently
+# run on CPU (extremely slow for 500+ frame propagation). The `spaces`
+# package only exists in the HF Spaces runtime, and importing it outside
+# a Space (e.g. in Colab) causes issues even though HF's docs describe it
+# as a safe no-op elsewhere — so gate the import itself on SPACE_ID, not
+# just the decorator's behavior.
+if os.environ.get("SPACE_ID"):
+    import spaces
+    gpu_task = spaces.GPU
+else:
+    def gpu_task(*args, **kwargs):
+        # Support both @gpu_task and @gpu_task(duration=...) usage,
+        # matching spaces.GPU's actual call signature, so the same
+        # decorator syntax works identically whether or not this is
+        # running on a Space.
+        if len(args) == 1 and callable(args[0]) and not kwargs:
+            return args[0]
+        def decorator(func):
+            return func
+        return decorator
+
 MODEL_CFG = "configs/sam2.1/sam2.1_hiera_t.yaml"
 FRAMES_DIR = "examples/Frames"
 OBJ_ID = 1
@@ -49,6 +71,7 @@ def list_frames():
     return sorted(f for f in os.listdir(FRAMES_DIR) if f.lower().endswith((".jpg", ".jpeg")))
 
 
+@gpu_task(duration=90)
 def on_extract(video_path, test_mode, progress=gr.Progress()):
     if video_path is None:
         raise gr.Error("Upload a video first.")
@@ -121,6 +144,7 @@ def on_reset(first_frame, inference_state):
     return first_frame, []
 
 
+@gpu_task(duration=300)
 def on_track(points, inference_state, frame_size, progress=gr.Progress()):
     if not points:
         raise gr.Error("Click a few spots on the object in frame 0 first (e.g. face, chest, legs).")
