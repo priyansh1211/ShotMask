@@ -95,11 +95,12 @@ def on_extract(video_path, test_mode, progress=gr.Progress()):
 
     # Show the frame immediately — don't make the artist stare at a blank box
     # while SAM2 encodes every frame in the background.
-    yield first_frame, [], first_frame, None, (frame_w, frame_h)
+    frame_count_text = f"**{len(frames)} frames** extracted · {frame_w}×{frame_h}"
+    yield first_frame, [], first_frame, None, (frame_w, frame_h), gr.Markdown(frame_count_text, visible=True)
 
     progress(0.4, desc="Encoding frames for tracking (this is the slow part)...")
     inference_state = predictor.init_video(FRAMES_DIR)
-    yield first_frame, [], first_frame, inference_state, (frame_w, frame_h)
+    yield first_frame, [], first_frame, inference_state, (frame_w, frame_h), gr.Markdown(frame_count_text, visible=True)
 
 
 def on_click(first_frame, points, evt: gr.SelectData):
@@ -242,6 +243,7 @@ with gr.Blocks(
                 value=False,
             )
             extract_btn = gr.Button("Load frames", variant="primary")
+            frame_count_display = gr.Markdown(visible=False)
             frame_display = gr.Image(label="Click the subject on frame 0")
             reset_btn = gr.Button("Reset points")
 
@@ -263,7 +265,7 @@ with gr.Blocks(
     extract_btn.click(
         on_extract, inputs=[video_input, test_mode_toggle],
         outputs=[frame_display, click_points_state, first_frame_state,
-                 inference_state_holder, frame_size_state],
+                 inference_state_holder, frame_size_state, frame_count_display],
     )
     frame_display.select(
         on_click, inputs=[first_frame_state, click_points_state],
