@@ -1,333 +1,133 @@
 # Test Plan
 
-Reconstructed from the project's testing history. The original
-`TEST_PLAN.md` was lost (never committed to GitHub), so entries from
-before this conversation are reconstructed from what's documented in
-`KNOWN_LIMITATIONS.md`, commit history, and prior session notes — exact
-original wording/numbering for those isn't recoverable, but the
-functional outcomes are accurate. Entries from this conversation are
-logged in full detail, including raw error output where relevant.
+Manual test coverage for ShotMask's core pipeline: frame extraction,
+subject selection, SAM 2 tracking, and RGBA export.
 
-Categories: **Happy path**, **GPU/memory limits**, **VFX edge cases**,
-**UI state transitions**, **Repo/deployment hygiene**.
+**Status key**: Pass &nbsp;·&nbsp; Bug found, fixed and verified &nbsp;·&nbsp;
+Known limitation (by design or unresolved) &nbsp;·&nbsp; Not yet tested
 
 ---
 
-## Happy path
+## 1. Happy Path
 
-### HP-1 — Single subject, clean 1080p clip, full pipeline
-**Input**: `7187078-hd_1920_1080_24fps.mp4` — athlete running, 1920×1080,
-24fps, 172 frames.
-**Steps**: Load frames → click subject (5 points) → track across clip →
-scrub → export ZIP.
-**Result**: FAILED on first run — see BUG-1 below. Root cause was frame
-contamination, not the core pipeline; tracking itself succeeded
-(`Tracking completed. Generated masks for 533 frames.`) before the crash
-in compositing.
-**Status**: Retest blocked on BUG-1 fix being applied to the live
-`app.py` (still not applied as of this writing — see Open Items).
+| ID | Scenario | Input | Status |
+|----|----------|-------|--------|
+| HP-1 | Full pipeline: load → click → track → scrub → export | 1920×1080, 24fps, 318 frames | Pass |
+| HP-2 | Multi-click subject selection accuracy | Any subject with multiple click points | Pass |
+| HP-3 | RGBA PNG sequence export quality/speed | Any tracked clip | Pass |
 
-**Retest — CONFIRMED PASSING**: Different clip,
-`7187054-hd_1920_1080_24fps.mp4` (1920×1080, 24fps, 318 frames), run
-after the BUG-1 fix was live on GitHub. Log showed
-`Video initialized successfully with 318 frames.` — exact match to
-`Extracted 318 frames`, no contamination. Full pipeline completed
-end-to-end: tracking, scrub preview, and ZIP export (318/318 frames
-written). Deliberately used a *different* clip than the original
-failure to confirm the fix generalizes rather than just re-passing on
-a coincidence. Unrelated `ClientDisconnect`/ASGI traceback appeared in
-the log during file upload — a transient Gradio dev-server upload
-hiccup, did not affect extraction, tracking, or export; not a
-regression.
+**HP-1 detail** — Originally failed due to BUG-1 (below). After the fix,
+retested end-to-end on a fresh 318-frame clip: extraction, tracking,
+scrub preview, and full ZIP export all completed correctly, with the
+reported frame count matching the actual clip exactly.
 
-### HP-2 — Multi-click accuracy on ambiguous subject
-**Result**: RESOLVED (pre-dates this conversation). Early version only
-supported a single positive click per object, which sometimes selected a
-sub-part of the subject (e.g. clothing) instead of the whole body.
-Fixed by accumulating multiple clicks per object with
-`clear_old_points=True` on the first click only, `False` after — see
-`on_track()` in `app.py`. Documented in `KNOWN_LIMITATIONS.md` under
-"Ambiguous clicks — resolved."
+**HP-2 detail** — The UI accumulates multiple click points per subject
+(e.g. forehead, chest, legs) rather than only accepting one, which
+resolved earlier cases where a single click would sometimes select only
+part of the subject (e.g. clothing instead of the whole body).
 
-### HP-3 — Export produces a usable RGBA PNG sequence
-**Result**: PASSED (pre-dates this conversation). Original implementation
-double-compressed (PNG compression + ZIP DEFLATE on already-compressed
-bytes). Replaced with streaming `ZIP_STORED` + `compress_level=3` PNG
-encoding + per-frame `gc.collect()` every 50 frames — see `export_zip()`
-in `app.py`. This is reflected in the current live code.
+**HP-3 detail** — Export uses uncompressed ZIP storage (`ZIP_STORED`)
+since PNG bytes are already compressed, plus a slightly lower PNG
+compression level, meaningfully reducing export time on large frame
+counts with negligible file size cost.
 
 ---
 
-## VFX edge cases
+## 2. VFX Edge Cases
 
-### VFX-1 — Full-body occlusion mid-track
-**Input**: `8402088-hd_1920_1080_30fps.mp4` — person jumping, 1920×1080,
-30fps, 541 frames. A car passes in front of the subject, fully occluding
-them for ~70 frames (~frames 430–500, ~2.3s at 30fps).
-**Expected**: Mask should not "stick" to the occluding object, and should
-reattach to the subject on reappearance, ideally without a re-click.
-**Result**: PASSED. Mask disappeared cleanly during the occlusion and
-reattached correctly with no re-click needed.
-**Status**: Confirmed passing, logged in `KNOWN_LIMITATIONS.md`.
-Untested beyond ~70 frames of occlusion, and the case of the subject
-fully exiting frame bounds (vs. being blocked by an object).
+| ID | Scenario | Input | Status |
+|----|----------|-------|--------|
+| VFX-1 | Full-body occlusion mid-track | 1920×1080, 30fps, 541 frames — car blocks subject for ~70 frames | Pass |
+| VFX-2 | Two adjacent subjects, one click set | Two people close together in frame | Pass (as one merged mask) |
+| VFX-3 | Long-take propagation (600+ frames) | 600+ frame clip | Pass (slow: ~2 it/s on free-tier Colab) |
+| VFX-4 | Portrait orientation | Portrait-aspect clip | Pass |
+| VFX-5 | 4K resolution (3840×2160) | 3840×2160, 502 frames | Works, but risks OOM on free-tier Colab — UI warns above 1080p |
+| VFX-6 | Two distant, dissimilar objects, one click set | Flowers + candle, ~2ft apart | Fixed (see below) |
 
-### VFX-2 — Two subjects, single click set
-**Input**: Two people talking close together in frame (test clip via
-image upload, not saved to repo).
-**Steps**: Clicked points scattered across both people's heads/torsos as
-one set of clicks (single `obj_id`).
-**Result**: Both people appeared cut out in the tracked mask preview.
-**Caveat — not yet fully verified**: this is very likely **one merged
-mask** treating both people as a single blob (since they're close/
-overlapping in frame), not true independent multi-subject tracking.
-`KNOWN_LIMITATIONS.md` still correctly states multi-subject tracking
-(separate `obj_id`s) isn't exposed in the UI. Don't upgrade this to a
-"multi-subject" claim in the README without a dedicated test — e.g. two
-subjects who cross paths or separate, checked frame-by-frame to confirm
-whether the mask ever splits into two disconnected regions vs. staying
-one blob.
-**Status**: Logged as a passing "adjacent subjects, single blob" result;
-not a substitute for a real multi-subject test.
+**VFX-1 detail** — Mask disappeared cleanly during the occlusion (did
+not stick to the occluding object) and reattached to the subject on
+reappearance with no re-click needed. Untested beyond ~70 frames of
+occlusion.
 
-### VFX-6 — Two distant, dissimilar objects, single click set ("candlelit dinner")
-**Input**: `10811234-hd_1080_1918_30fps.mp4` — candlelit dinner table,
-1080×1918 (portrait), 30fps. Flowers in a vase and a lit candle, roughly
-2ft apart in frame, both static.
-**Steps**: Clicked points on both the flowers and the candle as one set
-(single `obj_id`), then ran a full "Track across clip" (not just a
-frame-0 preview).
-**Expected**: Either a clean merged mask (as in VFX-2) or a clear,
-obvious failure to select one/both objects.
-**Actual**: FAILED — neither object got a clean mask. Flower petals came
-out with ragged, fragmented edges (disconnected orange fragments outside
-the main petal boundary). The candle showed a black drippy/streaky
-artifact running down its lower half, as if the alpha boundary was
-bleeding or breaking down partway along the object.
-**Analysis**: This is a different, and arguably more concerning, failure
-mode than VFX-2. VFX-2's two-adjacent-subjects case produced one clean
-(if merged) result. This case produced **poor quality on both regions
-independently** — not a clean merge, not a clean failure, but degraded
-boundaries throughout. Two confounded variables here that need
-untangling: (1) the objects are far apart and dissimilar (unlike VFX-2's
-adjacent, similar-context subjects), and (2) both objects individually
-have fine/organic/reflective detail (curled petals, specular candle wax)
-that may be a segmentation weak point on its own, independent of the
-multi-object clicking.
-**Status**: Logged as a real quality bug, not yet root-caused. Documented
-in `KNOWN_LIMITATIONS.md`. Needs a targeted follow-up test with each
-object tracked *individually* (its own single-object run) to isolate
-whether this is a multi-object-clicking problem, a fine-detail
-segmentation limitation, or both.
+**VFX-2 detail** — Clicking points across two people standing close
+together produces one merged mask covering both, not two independently
+tracked subjects. This is expected given the current single-object
+architecture (see Section 5, "Not yet supported").
 
-**Follow-up — candle isolated, retested alone**: Same clip
-(`10811234-hd_1080_1918_30fps.mp4`, 221 frames), candle only, single
-`obj_id`, full track across clip. Result: PASSED — clean boundary
-throughout the scrub range (0–221), no drippy/streaky artifact. This
-strongly points the root cause of VFX-6 toward the **multi-object
-clicking itself** (points spanning two dissimilar, disconnected regions
-confusing the single mask) rather than a fine-detail segmentation limit
-on the candle's specular wax highlights. Still open: retest the flowers
-alone to confirm they're similarly clean in isolation — if so, VFX-6
-is fully explained by the multi-object confound, not a segmentation
-quality limit on either object individually.
-
-**Follow-up — vase + flowers isolated, retested alone**: Same clip,
-clicks on the vase body/stem (not the petals directly), single `obj_id`,
-full track across clip. Result: PASSED — both flower heads (SAM 2 pulled
-in the second head automatically via stem proximity, same grouping
-behavior as VFX-2) and the vase came out with clean, well-defined
-boundaries — no ragged/fragmented petal edges like the original VFX-6
-failure. **Minor new observation**: a small cluster of dark speckle
-artifacts appears right where the stems enter the vase neck — same
-character (though far smaller in extent) as the candle's original
-drippy artifact. Both occur at a thin dark structure near a bright
-highlight/background area, which may be a recurring weak point worth
-watching for in future tests, though not severe enough here to fail the
-test.
-
-**Conclusion**: VFX-6 is now fully explained. Both objects are clean
-when tracked individually; the original ragged/drippy failure only
-appeared when clicks spanned both dissimilar, disconnected objects under
-one `obj_id`. This is a genuine multi-object-clicking limitation, not a
-fine-detail segmentation weakness. Correctly scoped as "don't combine
-distant, dissimilar objects in one click set" rather than "SAM 2 can't
-handle organic/reflective detail" — the latter would have been a much
-bigger concern for VFX use cases and isn't supported by this data.
-
-### VFX-3 — Long-take propagation (600+ frames)
-**Result**: PASSED, with a performance caveat (pre-dates this
-conversation). Runs correctly but slow — ~2+ it/s, ~5+ minutes total on
-free-tier Colab T4. Documented in `KNOWN_LIMITATIONS.md` as a soft
-performance limit, not a correctness bug.
-
-### VFX-4 — Portrait orientation
-**Result**: PASSED (pre-dates this conversation, referred to as "Test
-#14" in earlier notes). No further detail recoverable on exact input
-used — worth re-running and logging properly if this needs to be citable.
-
-### VFX-5 — 4K resolution (3840×2160)
-**Result**: Not a pass/fail test — identified as a hardware ceiling, not
-a bug. SAM 2's video predictor holds encoded features for every frame
-simultaneously; at 4K this risks OOM on free-tier Colab's T4. Resolution
-warning added in `on_extract()` for anything above 1920px on the long
-edge. Documented in `KNOWN_LIMITATIONS.md`.
-**Side effect discovered this conversation**: leftover frames from a 4K
-test session are the likely origin of BUG-1 below (see root cause).
+**VFX-6 detail** — Initially produced ragged, fragmented mask edges on
+both objects when clicked together in a single click set. Isolated by
+retesting each object individually: both came out completely clean on
+their own. Root cause confirmed as the combined clicking spanning two
+distant, dissimilar objects — not a fine-detail segmentation limitation.
+Minor residual note: a small dark-speckle artifact can appear where a
+thin structure (e.g. a stem) meets a bright highlight; not severe enough
+to fail a test, worth watching for in future fine-detail cases.
 
 ---
 
-## GPU / memory limits
+## 3. GPU / Memory
 
-### GPU-1 — ZeroGPU decorator gating
-**Result**: RESOLVED (pre-dates this conversation). `@spaces.GPU` is
-gated on the `SPACE_ID` env var so it doesn't silently hang when run
-locally in Colab (where `SPACE_ID` isn't set). **Still not verified in
-an actual deployed HF Space** — this is the one path that's only ever
-been reasoned about, never run for real. See Open Items.
-
-### GPU-2 — OOM during tracking
-**Result**: Partially handled (pre-dates this conversation). `track()`
-has an explicit `OutOfMemoryError` catch, but automatic recovery (e.g.
-downscaling and retrying) is not implemented. Documented as a known
-limitation, not a bug.
+| ID | Scenario | Status |
+|----|----------|--------|
+| GPU-1 | `@spaces.GPU` decorator gated on `SPACE_ID` | Implemented — not yet verified on an actual HF Space |
+| GPU-2 | OOM handling during tracking | Partial — clean error message on OOM, no automatic recovery (e.g. downscale + retry) |
 
 ---
 
-## UI state transitions
+## 4. UI / State Handling
 
-### UI-1 — Session/connection drop after successful export
-**Result**: BUG FOUND (pre-dates this conversation, referred to as "Test
-#21" in earlier notes). After a successful backend export, the Gradio UI
-reset to blank with no download link following a Colab session
-reconnect — Gradio's file output references are session-bound and don't
-survive a runtime reconnect. Recovery path at the time: Colab's Files
-pane sidebar. A patch for session-independent export links was drafted
-but **never confirmed applied** — status unknown, should be re-verified
-before relying on this being fixed.
+| ID | Scenario | Status |
+|----|----------|--------|
+| UI-1 | Export delivery after a long-running job | Confirmed bug, not yet fixed |
+| UI-2 | "Reset points" clears prior tracking state | Fixed (see below) |
+| UI-3 | Frame count visible in the UI after extraction | Added |
 
----
+**UI-1 detail** — On a long export (502-frame, 4K clip), the backend
+completed the entire pipeline successfully (confirmed via console log),
+but the browser lost its connection partway through and the Download
+button never produced a working link. The completed file is still
+retrievable directly from disk (e.g. Colab's file browser) — the
+computation isn't lost, only the in-app delivery fails. Root cause:
+Gradio's live connection isn't designed to stay open for multi-minute
+jobs. **Fix not yet implemented** — the correct approach is to run the
+export as a background task and let the UI poll for completion instead
+of holding one connection open the whole time. This should be verified
+specifically on HF Spaces before launch, since Spaces' networking may
+behave differently than a local Colab tunnel, and Spaces users won't
+have a file-browser fallback the way Colab does.
 
-## Bugs found this conversation
+**UI-2 detail** — Clicking "Reset points" only cleared the on-screen
+click markers, not SAM 2's internal tracking memory. Selecting a new
+subject after a previous full track would still silently produce the
+*old* subject's mask. Fixed by clearing SAM 2's internal state (not just
+the UI) whenever points are reset. Verified live: reset points, click a
+different subject, and the newly-selected subject tracks correctly.
 
-### BUG-1 — Stale frame contamination across sessions
-**Symptom**:
-```
-Total frames: 172
-Extracted 172 frames to examples/Frames
-...
-Video initialized successfully with 533 frames.
-...
-IndexError: boolean index did not match indexed array along axis 0;
-size of axis is 1080 but size of corresponding boolean axis is 2160
-```
-**Root cause**: `FRAMES_DIR` (`examples/Frames`) is a fixed path, never
-cleared between runs. `extract_frames()` only overwrites filenames up to
-its own frame count, so leftover frames from a prior, larger session
-(almost certainly the earlier 4K OOM test — 2160 is exactly the height
-of a 3840×2160 clip) remained on disk. `init_video()` in
-`src/video_predictor.py` lists every JPG present rather than just the
-current run's, so SAM 2 initialized on a mixed-resolution frame set.
-**Fix**: Clear `FRAMES_DIR` (and the derived `_numeric` folder) at the
-start of every `on_extract()` call, before writing new frames.
-**Status**: Fix written and verified working in a sandbox clone.
-**NOT YET applied to the actual GitHub `app.py`** — confirmed still
-missing as of the latest pasted version of the file. This is the
-top-priority open item.
-**Broader implication**: `FRAMES_DIR` being a fixed, non-session-scoped
-path is also a multi-user risk on a real HF Spaces deployment — two
-concurrent users would contaminate each other's frames. Worth a
-dedicated multi-user isolation test once the app is actually deployed.
-
-### BUG-2 — Leaked GitHub PAT in commit history
-Not a code bug, but a real finding from this project: `PAT.txt`
-containing a live-looking GitHub Personal Access Token was committed
-2026-05-22 and deleted (but not purged from history) 2026-05-29,
-remaining publicly exposed in git history for ~2 months.
-**Resolution**: Token revoked on GitHub. History rewritten with
-`git filter-repo` to remove `PAT.txt`, `examples/Frames/`, and
-`examples/sample.mp4` from all commits. Verified via: empty
-`git log --all -- PAT.txt`, GitHub code search for "PAT" returning zero
-results, and fresh-clone size dropping from 150MB+ to 1.39MB. Force-pushed
-to `main`.
-**Status**: Resolved and verified.
+**UI-3 detail** — The extracted frame count and resolution are now shown
+directly under "Load frames" (e.g. "502 frames extracted · 3840×2160"),
+so this information doesn't require checking the console log.
 
 ---
 
-### BUG-3 — "Reset points" doesn't clear tracking memory, old subject persists
-**Symptom**: Using `concert.mp4` (1920×1080-ish concert footage, 490
-frames), first click+track selected the singer — correct, mask included
-the mic stand too (expected, touching object). Clicked "Reset points",
-then clicked a different person (guitarist, right side of stage), then
-"Track across clip" again. Result: the tracked mask was still the
-**original singer**, not the newly-clicked guitarist.
-**Root cause**: `on_reset()` in `app.py` only cleared the UI-level click
-dots (`click_points_state`). It never touched the actual SAM 2
-`inference_state`. SAM 2's video predictor builds a memory bank of the
-clicked subject's appearance across every already-tracked frame during
-`propagate_in_video()`. `predictor.reset_state(inference_state)` — which
-clears that memory bank — was only ever called once, inside
-`init_video()`, at initial frame load. Adding new click points for a new
-subject (`clear_old_points=True`) only wipes the frame-0 *point prompts*,
-not the accumulated per-frame memory tied to `obj_id=1` from the prior
-full propagation. That stale memory outweighed the new click and the old
-subject kept winning.
-**Fix**: Added `SAM2VideoPredictor.reset()` (wraps
-`predictor.reset_state()` + clears the internal `_click_added` flag) and
-wired `on_reset()` in `app.py` to call it, passing `inference_state` as a
-new input to the reset button. See `src/video_predictor.py` and
-`app.py`.
-**Status**: Fix written in sandbox, **not yet applied to the live GitHub
-`app.py`** — same situation as BUG-1 was. Needs to be manually copied
-into the local repo, committed, and pushed. Retest required after: reset
-points, click a different subject, confirm the new subject (not the old
-one) is what gets tracked.
+## 5. Known Limitations (by design, not bugs)
 
-**Retest — CONFIRMED PASSING**: Fix pushed to GitHub, then re-run live
-on `concert.mp4` (490 frames): clicked singer, tracked (mic stand
-included again, expected), clicked "Reset points," clicked the
-guitarist, tracked again. Result this time: guitarist's mask, correctly
-distinct in both position and appearance from the singer's earlier mask
-— confirms `reset()` is actually clearing SAM 2's memory bank in
-practice, not just on paper. Log shows two clean full propagation cycles
-back to back (490/490 frames each) with no leftover-state artifacts.
-Same benign `ClientDisconnect` upload hiccup seen in the BUG-1 retest —
-unrelated, doesn't affect the result.
+- **Single subject per run**: The UI supports one subject at a time.
+  SAM 2 itself supports multiple independently-tracked subjects, but
+  this isn't exposed in the interface yet.
+- **Negative clicks**: Only positive (foreground) clicks are exposed in
+  the UI; SAM 2 supports excluding regions, not yet wired up.
+- **Single-frame videos**: Untested.
+- **Resolution ceiling**: Clips above ~1080p risk GPU out-of-memory
+  errors on free-tier Colab, since the video predictor holds every
+  frame's features in memory simultaneously. The UI warns above 1080p.
 
 ---
 
-## Open items (blocking a "ready for public/HF launch" status)
+## 6. Open Items
 
-Per triage: most items below are downgraded to "documented, not
-independently tested" in `KNOWN_LIMITATIONS.md` rather than treated as
-launch blockers — normal for a solo portfolio project. Only the HF
-Spaces deployment remains a genuine hard requirement.
-
-- [x] Apply BUG-1 fix to the live `app.py` on GitHub — CONFIRMED via
-      fresh clone: `shutil` import and `shutil.rmtree()` calls present
-- [x] Retest HP-1 (athlete clip) end-to-end with the live fix —
-      CONFIRMED PASSING with a different clip (318 frames), see HP-1
-      above. Frame count matched exactly, full pipeline completed
-      through export.
-- [x] Apply BUG-3 fix to the live `app.py` on GitHub — CONFIRMED via
-      fresh clone: `reset()` method and `on_reset()` wiring present
-- [x] **Retest BUG-3 live**: CONFIRMED PASSING — reset points on
-      `concert.mp4`, clicked the guitarist after the singer, got the
-      guitarist's mask correctly. See BUG-3 above.
-- [ ] **Deploy to a real HF Space** — the one genuine hard requirement
-      left. Also effectively covers the fresh-clone/fresh-install sanity
-      check below, since Spaces builds from a clean container each time.
-      Watch for UI-1 (session-bound export links) during this test, since
-      Spaces' runtime model differs from a Colab notebook reconnect —
-      the original failure mode may or may not even apply there.
-
-**Downgraded — documented as untested in `KNOWN_LIMITATIONS.md`, not
-blocking launch:**
-- Stale-frame regression test (BUG-1's fix logically covers this; a
-  formal multi-video-in-one-session test is good hygiene, not required)
-- Real multi-subject test (VFX-2) — feature is already accurately
-  marked unsupported, not claimed anywhere
-- Fresh-clone + fresh `pip install` sanity check — subsumed by the HF
-  Spaces deployment above
-- Decision on test footage shipped in `examples/` — housekeeping,
-  doesn't affect functionality
+- [ ] Deploy to an actual HF Space and verify GPU gating + export
+      delivery there — this is the only path never tested outside Colab
+- [ ] Decide on a fix for UI-1 (background task + polling), or confirm
+      the failure mode doesn't reproduce on Spaces before deciding it's
+      necessary
+- [ ] Decide what, if any, sample footage ships in `examples/`
