@@ -46,12 +46,9 @@ ShotMask/
 ├── src/
 │   ├── preprocess.py        # Video → frames extraction
 │   ├── video_predictor.py   # SAM2VideoPredictor wrapper (init/click/track)
-│   ├── alpha_exporter.py    # Mask → PNG with alpha
-│   └── sam2_predictor.py    # Single-image SAM 2 wrapper (used internally)
+│   └── alpha_exporter.py    # Mask → PNG with alpha
 ├── app.py                   # Gradio UI
 ├── download_checkpoint.py   # Fetches the SAM 2.1 tiny checkpoint on first run
-├── notebooks/
-│   └── 01_sam2_test.ipynb   # Development notebook
 └── examples/                # Test footage and results
 ```
 

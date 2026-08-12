@@ -236,7 +236,9 @@ checkpoints/
 
 # Secrets — never ever
 PAT.txt
-*.txt containing tokens
+*.pem
+*.key
+.env*
 
 # Virtual environment
 .venv/
