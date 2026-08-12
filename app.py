@@ -266,7 +266,7 @@ with gr.Blocks(
                 label="Dev/test mode (downsample to 5fps for faster iteration — don't use this for a real export)",
                 value=False,
             )
-            extract_btn = gr.Button("Load frames", variant="primary")
+            extract_btn = gr.Button("Load frames", variant="primary", interactive=False)
             frame_count_display = gr.Markdown(visible=False)
             frame_display = gr.Image(label="Click the subject on frame 0")
             reset_btn = gr.Button("Reset points")
@@ -285,6 +285,20 @@ with gr.Blocks(
             scrub_preview = gr.Image(label="Tracked mask preview (checkerboard = transparent)")
             export_btn = gr.Button("Export PNG sequence (.zip)", variant="primary")
             export_file = gr.File(label="Download")
+
+    # extract_btn starts disabled (see the gr.Button definition above) so a
+    # click can't fire before the video is actually on the server. Without
+    # this, clicking "Load frames" while the file is still mid-upload
+    # queues a call to on_extract() against an incomplete/empty video
+    # value — the UI shows a pending "processing" state indefinitely
+    # (indistinguishable from a hang) since there's nothing for the
+    # backend to act on until the *next* click after the upload finishes.
+    video_input.upload(
+        lambda: gr.Button(interactive=True), outputs=extract_btn,
+    )
+    video_input.clear(
+        lambda: gr.Button(interactive=False), outputs=extract_btn,
+    )
 
     extract_btn.click(
         on_extract, inputs=[video_input, test_mode_toggle],
