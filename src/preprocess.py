@@ -43,11 +43,11 @@ def extract_frames(video_path, output_folder, target_fps=None):
         if not ret:
             break
         if i % frame_stride == 0:
-            cv.imwrite(
-                os.path.join(output_folder, f'frame_{saved:04d}.jpg'),
-                frame
-            )
-            saved += 1
+            out_path = os.path.join(output_folder, f'frame_{saved:04d}.jpg')
+            ok = cv.imwrite(out_path, frame)
+        if not ok:
+            print(f"WARNING: cv.imwrite failed for {out_path} — frame not written to disk")
+        saved += 1
         i += 1
 
     cap.release()
