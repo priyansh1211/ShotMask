@@ -11,7 +11,7 @@ def extract_frames(video_path, output_folder, target_fps=None):
         won't line up with the source footage in Nuke/AE). Only pass a value
         here for your own dev/testing iteration, where you want a quick
         smoke test without re-processing 500 frames every run. When set, the output FPS is approximate (see stride note below)
-    OUT: PNG frames saved to output folder
+    OUT: JPG frames saved to output folder
     """
     # Create output folder if it doesn't exist
     os.makedirs(output_folder, exist_ok=True)
@@ -46,7 +46,7 @@ def extract_frames(video_path, output_folder, target_fps=None):
             if not ret:
                 break
             if i % frame_stride == 0:
-                out_path = os.path.join(output_folder, f'frame_{saved:04d}.png')
+                out_path = os.path.join(output_folder, f'frame_{saved:04d}.jpg')
                 ok = cv.imwrite(out_path, frame)
                 if not ok:
                     raise RuntimeError(f"cv.imwrite failed for {out_path} — frame not written to disk")
