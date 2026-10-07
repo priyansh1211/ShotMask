@@ -222,7 +222,10 @@ examples/Frames/
 examples/*.mp4
 examples/*.mov
 examples/*.mkv
+*_numeric/
 
+# ...except the small demo clip (rename to match yours)
+!examples/sample.mp4
 # Export outputs — regeneratable, and PNG sequence zips are frequently
 # multi-GB at 4K (GitHub hard-rejects files over 100MB anyway)
 examples/Masks/

@@ -12,9 +12,15 @@ class SAM2VideoPredictor:
         OUT: None — model stored in self.predictor
         """
         try:
-            model = build_sam2_video_predictor(config_file=model_cfg, ckpt_path=checkpoint_path)
+            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+            print(f"SAM2 running on: {self.device}")
+            model = build_sam2_video_predictor(
+                config_file=model_cfg,
+                ckpt_path=checkpoint_path,
+                device=self.device,
+            )
         except Exception as e:
-            raise RuntimeError(f"Failed to load SAM2 video model: {e}")
+            raise RuntimeError(f"Failed to load SAM2 video model: {e}") from e
         self.predictor = model
         self._click_added = False
         print("Video model loaded successfully.")
