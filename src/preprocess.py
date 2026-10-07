@@ -46,7 +46,7 @@ def extract_frames(video_path, output_folder, target_fps=None):
             if not ret:
                 break
             if i % frame_stride == 0:
-                out_path = os.path.join(output_folder, f'frame_{saved:04d}.jpg')
+                out_path = os.path.join(output_folder, f'frame_{saved:05d}.jpg')
                 ok = cv.imwrite(out_path, frame)
                 if not ok:
                     raise RuntimeError(f"cv.imwrite failed for {out_path} — frame not written to disk")
